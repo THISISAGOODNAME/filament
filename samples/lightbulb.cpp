@@ -270,7 +270,7 @@ static void setup(Engine* engine, View* view, Scene* scene) {
         scene->addEntity(g_light1);
         scene->addEntity(g_light2);
         scene->addEntity(g_light3);
-        scene->addEntity(g_light4);
+        //scene->addEntity(g_light4);
     }
 
     if (g_discoBall) {

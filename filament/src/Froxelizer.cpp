@@ -33,6 +33,8 @@
 #include <algorithm>
 
 #include <stddef.h>
+#include <details/Froxelizer.h>
+
 
 using namespace math;
 using namespace utils;
@@ -540,6 +542,10 @@ void Froxelizer::froxelizeLights(FEngine& engine,
     froxelizeLoop(engine, camera, lightData);
     froxelizeAssignRecordsCompress();
 
+    LightRecord r;
+    r.lights = ~r.lights;
+    computeLightTree(r, camera, lightData);
+
 #ifndef NDEBUG
     if (lightData.size()) {
         // go through every froxel
@@ -887,6 +893,69 @@ void Froxelizer::froxelizePointAndSpotLight(
             }
         }
     }
+}
+
+void Froxelizer::computeLightTree(
+        const Froxelizer::LightRecord& lights,
+        const CameraInfo& camera,
+        const FScene::LightSoa& lightData) const noexcept {
+
+    // get light list for bitfield
+    RecordBufferType indices[CONFIG_MAX_LIGHT_COUNT];       // this must be power-of-tow
+    memset(indices, 0, sizeof(RecordBufferType) * CONFIG_MAX_LIGHT_COUNT);
+
+    RecordBufferType* last = indices;
+    lights.lights.forEachSetBit([&last](size_t l) {
+        *last++ = RecordBufferType(l);
+    });
+
+
+    size_t cmax = lightData.size() - 1u;
+    size_t cpot = std::min(cmax, size_t(last - indices));
+    slog.d << cpot << io::endl;
+    // next power-of-two if not a power-of-two
+    cpot = utils::popcount(cpot) > 1 ? (1u << ((sizeof(cpot) * 8 - 1 + 1) - utils::clz(cpot))) : cpot;
+    slog.d << cpot << io::endl;
+
+
+    auto const* UTILS_RESTRICT spheres = lightData.data<FScene::POSITION_RADIUS>() + 1;
+
+    std::function<void(size_t, size_t)> node =
+            [&node, &camera, cmax, cpot, spheres, indices, indent = 0u](size_t b, size_t e) mutable {
+                ++indent;
+                bool isLeaf = (e - b) == 1;
+                float min = 1.0f;
+                float max = 0.0f;
+                for (size_t i = b; i < std::min(e, cmax); i++) {
+                    auto s = spheres[indices[i]];
+                    float4 c = camera.view * s.xyz;
+                    float4 n = c - float4{0, 0, s.r, 0};
+                    float4 f = c + float4{0, 0, s.r, 0};
+                    n = camera.projection * n;
+                    f = camera.projection * f;
+                    min = std::min(min, n.w > camera.zn ? (n.z / n.w + 1.0f) * 0.5f : 0.0f);
+                    max = std::max(max, f.w < camera.zf ? (f.z / f.w + 1.0f) * 0.5f : 1.0f);
+                }
+
+                slog.d << std::string(indent, '\t')
+                    << min << ", " << max
+                    << ", skip=" << (1 << (cpot - indent))
+                    << ", isLeaf=" << isLeaf;
+                if (isLeaf) {
+                    slog.d << ", light=" << indices[b];
+                }
+                slog.d << io::endl;
+
+                if (!isLeaf) {
+                    size_t lc = (e - b) / 2;
+                    node(b, b + lc);
+                    node(b + lc, e);
+                }
+                --indent;
+            };
+
+    node(0, cpot);
+    slog.d << io::endl;
 }
 
 } // namespace details

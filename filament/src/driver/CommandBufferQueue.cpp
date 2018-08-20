@@ -77,7 +77,7 @@ void CommandBufferQueue::flush() noexcept {
     mFreeSpace -= used;
     const size_t requiredSize = mRequiredSize;
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) || !UTILS_HAS_THREADING
     size_t totalUsed = circularBuffer.size() - mFreeSpace;
     mHighWatermark = std::max(mHighWatermark, totalUsed);
     if (UTILS_UNLIKELY(totalUsed > requiredSize)) {
@@ -106,6 +106,14 @@ std::vector<CommandBufferQueue::Slice> CommandBufferQueue::waitForCommands() con
     while (mCommandBuffersToExecute.empty() && !mExitRequested) {
         mCondition.wait(lock);
     }
+    return std::move(mCommandBuffersToExecute);
+}
+
+std::vector<CommandBufferQueue::Slice> CommandBufferQueue::checkForCommands() {
+    if (mCircularBuffer.empty()) {
+        return {};
+    }
+    flush();
     return std::move(mCommandBuffersToExecute);
 }
 

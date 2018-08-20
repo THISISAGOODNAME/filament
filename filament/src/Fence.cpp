@@ -59,6 +59,10 @@ void FFence::terminate(FEngine& engine) noexcept {
 UTILS_NOINLINE
 FenceStatus FFence::waitAndDestroy(FFence* fence, Mode mode) noexcept {
     assert(fence);
+    if (!UTILS_HAS_THREADING) {
+        //fence->mEngine.tick(nullptr);
+        return FenceStatus::CONDITION_SATISFIED;
+    }
     FenceStatus status = fence->wait(mode, FENCE_WAIT_FOR_EVER);
     fence->mEngine.destroy(fence);
     return status;
